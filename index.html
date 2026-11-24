@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Double Pendulum — Lagrangian Laboratory</title>
+<style>
+:root{--bg:#0b1220;--panel:#121d30;--panel2:#17243a;--text:#e8eef8;--muted:#9fb0c8;--accent:#65d6c4;--accent2:#f6b85b;--line:#2b3b54}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+header{padding:22px clamp(16px,3vw,36px);border-bottom:1px solid var(--line);background:#0e1727}
+h1{font-size:clamp(22px,3vw,32px);margin:0 0 5px}header p{margin:0;color:var(--muted)}
+main{max-width:1500px;margin:auto;padding:18px;display:grid;grid-template-columns:minmax(0,1.6fr) minmax(300px,.9fr);gap:16px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px;min-width:0}
+.panel h2{font-size:17px;margin:0 0 12px}.sub{color:var(--muted);font-size:13px}
+.stage{position:relative;background:radial-gradient(ellipse at 50% 45%,#1a2a40,#0d1727 75%);border-radius:10px;overflow:hidden}
+canvas{display:block;width:100%;height:440px}
+.toolbar{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;align-items:center}
+button{border:1px solid #3a526f;background:var(--panel2);color:var(--text);padding:9px 14px;border-radius:9px;cursor:pointer;font-weight:600}
+button.primary{background:#1d665f;border-color:#2b9a8d}button:hover{filter:brightness(1.15)}
+.statgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:12px}
+.stat{background:var(--panel2);padding:10px;border-radius:9px}.stat b{display:block;font-size:18px;color:var(--accent)}.stat span{font-size:12px;color:var(--muted)}
+.controls{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.control{background:var(--panel2);padding:10px;border-radius:9px}.control label{display:flex;justify-content:space-between;gap:8px;font-size:13px;margin-bottom:7px}.control output{color:var(--accent);font-variant-numeric:tabular-nums}
+input[type=range]{width:100%;accent-color:var(--accent)}
+.full{grid-column:1/-1}.graphs{display:grid;grid-template-columns:1fr 1fr;gap:12px}.graph{background:#0d1727;border-radius:9px;padding:8px;min-width:0}.graph canvas{height:190px}
+.equations{font-family:Georgia,serif;font-size:15px;line-height:1.8;overflow-wrap:anywhere}.eq{background:#0d1727;padding:10px;border-radius:8px;margin:8px 0}.eq strong{font-family:system-ui;color:var(--accent);font-size:12px;display:block}
+.note{border-left:3px solid var(--accent2);padding:8px 11px;background:#1a2638;color:#d7e1ef;border-radius:0 8px 8px 0;font-size:13px}
+select{background:var(--panel2);color:var(--text);border:1px solid var(--line);padding:8px;border-radius:8px}
+@media(max-width:900px){main{grid-template-columns:1fr}.statgrid{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:560px){main{padding:10px}.controls{grid-template-columns:1fr}.graphs{grid-template-columns:1fr}canvas{height:340px}}
+</style>
+</head>
+<body>
+<header><h1>Double Pendulum · Lagrangian Laboratory</h1><p>Interactive two-degree-of-freedom model with torsional springs, live motion and energy diagnostics.</p></header>
+<main>
+<section class="panel">
+ <h2>Mechanical system</h2>
+ <div class="stage"><canvas id="scene" aria-label="Animated double pendulum"></canvas></div>
+ <div class="toolbar">
+  <button class="primary" id="play">▶ Play</button><button id="step">Step</button><button id="reset">Reset</button>
+  <label class="sub">Playback <select id="speed"><option value=".25">0.25×</option><option value=".5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option></select></label>
+  <label class="sub"><input type="checkbox" id="trails" checked> Show trails</label>
+ </div>
+ <div class="statgrid">
+  <div class="stat"><b id="v1">0.00</b><span>θ₁ (rad)</span></div><div class="stat"><b id="v2">0.00</b><span>θ₂ (rad)</span></div>
+  <div class="stat"><b id="w1">0.00</b><span>ω₁ (rad/s)</span></div><div class="stat"><b id="w2">0.00</b><span>ω₂ (rad/s)</span></div>
+ </div>
+ <p class="sub">Angles are measured from the downward vertical. θ₂ is the relative angle between link 1 and link 2; the second link's absolute angle is θ₁ + θ₂.</p>
+</section>
+<aside class="panel">
+ <h2>System parameters</h2><div class="controls" id="controls"></div>
+ <div class="toolbar"><button id="defaults">Restore defaults</button><button id="zeroTorque">Set torques to zero</button></div>
+ <p class="note">The model uses the exact coupled equations from the stated kinetic and potential energies. Masses are treated as point-mass equivalents at the specified center-of-mass distances; link rotational inertias are not included separately.</p>
+</aside>
+<section class="panel">
+ <h2>Energy history</h2><div class="graphs"><div class="graph"><canvas id="energyPlot"></canvas><div class="sub">Kinetic T, potential V and total E (J)</div></div><div class="graph"><canvas id="anglePlot"></canvas><div class="sub">Angles θ₁ and θ₂ (rad)</div></div></div>
+ <div class="statgrid"><div class="stat"><b id="kin">0.00</b><span>Kinetic energy (J)</span></div><div class="stat"><b id="pot">0.00</b><span>Potential energy (J)</span></div><div class="stat"><b id="tot">0.00</b><span>Total energy (J)</span></div><div class="stat"><b id="time">0.00</b><span>Simulation time (s)</span></div></div>
+</section>
+<section class="panel">
+ <h2>Mathematical model</h2>
+ <div class="equations">
+  <div class="eq"><strong>Generalized coordinates</strong>q = (θ₁, θ₂), &nbsp; q̇ = (ω₁, ω₂)</div>
+  <div class="eq"><strong>Kinetic energy</strong>T = ½ Aω₁² + Bω₁ω₂ + ½ Dω₂²<br>
+  A = m₁b₁² + m₂(a₁² + b₂² + 2a₁b₂ cos θ₂)<br>
+  B = m₂(b₂² + a₁b₂ cos θ₂), &nbsp; D = m₂b₂²</div>
+  <div class="eq"><strong>Potential energy</strong>V = −m₁gb₁ cos θ₁ − m₂ga₁ cos θ₁ − m₂gb₂ cos(θ₁+θ₂) + ½K₁θ₁² + ½K₂θ₂²</div>
+  <div class="eq"><strong>Lagrangian</strong>L = T − V</div>
+  <div class="eq"><strong>Equations of motion</strong>M(q)q̈ + h(q,q̇) + ∇V(q) = τ<br>
+  M = [[A, B], [B, D]], &nbsp; τ = [C₁, C₂]ᵀ<br>
+  h₁ = A₂ω₁ω₂ + B₂ω₂²<br>
+  h₂ = −½A₂ω₁²<br>
+  A₂ = ∂A/∂θ₂ = −2m₂a₁b₂ sin θ₂, &nbsp; B₂ = ∂B/∂θ₂ = −m₂a₁b₂ sin θ₂</div>
+  <div class="eq"><strong>Potential derivatives</strong>V₁ = (m₁b₁+m₂a₁)g sin θ₁ + m₂gb₂ sin(θ₁+θ₂) + K₁θ₁<br>
+  V₂ = m₂gb₂ sin(θ₁+θ₂) + K₂θ₂</div>
+ </div>
+ <p class="sub">At each integration step, the simulator solves the 2×2 mass-matrix system for the angular accelerations, then advances the state using fourth-order Runge–Kutta (RK4).</p>
+</section>
+</main>
+<script>
+(()=>{
+const defaults={m1:1,m2:1,a1:1,b1:.5,b2:.5,K1:1.5,K2:1, g:9.81,t1:0.55,t2:0.7,w1:0,w2:0,C1:0,C2:0};
+const specs=[
+ ['m1','Mass m₁','kg',.1,5,.05],['m2','Mass m₂','kg',.1,5,.05],
+ ['a1','Pivot spacing a₁','m',.2,2,.02],['b1','COM distance b₁','m',.1,1.5,.02],['b2','COM distance b₂','m',.1,1.5,.02],
+ ['K1','Spring K₁','N·m/rad',0,20,.1],['K2','Spring K₂','N·m/rad',0,20,.1],['g','Gravity g','m/s²',0,20,.1],
+ ['t1','Initial θ₁','rad',-3.14,3.14,.01],['t2','Initial θ₂','rad',-3.14,3.14,.01],
+ ['w1','Initial ω₁','rad/s',-8,8,.1],['w2','Initial ω₂','rad/s',-8,8,.1],
+ ['C1','Torque C₁','N·m',-10,10,.1],['C2','Torque C₂','N·m',-10,10,.1]
+];
+let p={...defaults},state=[p.t1,p.t2,p.w1,p.w2],time=0,running=false,last=0,history=[],trail1=[],trail2=[],frame=0;
+const $=id=>document.getElementById(id), scene=$('scene'),ctx=scene.getContext('2d');
+const controls=$('controls');
+specs.forEach(([k,label,unit,min,max,step])=>{
+ const d=document.createElement('div');d.className='control';
+ d.innerHTML=`<label for="${k}"><span>${label} <small class="sub">(${unit})</small></span><output id="out_${k}"></output></label><input id="${k}" type="range" min="${min}" max="${max}" step="${step}" value="${p[k]}">`;
+ controls.appendChild(d);
+ const el=$(k);el.addEventListener('input',()=>{p[k]=+el.value;$('out_'+k).textContent=p[k].toFixed(2);if(['t1','t2','w1','w2'].includes(k)&&time===0){state=[p.t1,p.t2,p.w1,p.w2];draw() }});
+ $('out_'+k).textContent=p[k].toFixed(2);
+});
+function deriv(s){
+ const [q1,q2,v1,v2]=s,{m1,m2,a1,b1,b2,K1,K2,g,C1,C2}=p;
+ const A=m1*b1*b1+m2*(a1*a1+b2*b2+2*a1*b2*Math.cos(q2));
+ const B=m2*(b2*b2+a1*b2*Math.cos(q2)),D=m2*b2*b2;
+ const A2=-2*m2*a1*b2*Math.sin(q2),B2=-m2*a1*b2*Math.sin(q2);
+ // Coriolis / centrifugal terms (dT/dq1 = 0, dT/dq2 = ½A2ω1² + B2ω1ω2)
+ const h1=A2*v1*v2+B2*v2*v2;
+ const h2=-.5*A2*v1*v1;
+ const V1=(m1*b1+m2*a1)*g*Math.sin(q1)+m2*g*b2*Math.sin(q1+q2)+K1*q1;
+ const V2=m2*g*b2*Math.sin(q1+q2)+K2*q2;
+ const r1=C1-h1-V1,r2=C2-h2-V2,det=A*D-B*B;
+ const acc1=(D*r1-B*r2)/det,acc2=(A*r2-B*r1)/det;
+ return [v1,v2,acc1,acc2];
+}
+function add(s,k,f){return s.map((x,i)=>x+k[i]*f)}
+function rk4(dt){const s=state,k1=deriv(s),k2=deriv(add(s,k1,dt/2)),k3=deriv(add(s,k2,dt/2)),k4=deriv(add(s,k3,dt));state=s.map((x,i)=>x+dt*(k1[i]+2*k2[i]+2*k3[i]+k4[i])/6);time+=dt;}
+function energy(){
+ const [q1,q2,v1,v2]=state,{m1,m2,a1,b1,b2,K1,K2,g}=p;
+ const A=m1*b1*b1+m2*(a1*a1+b2*b2+2*a1*b2*Math.cos(q2)),B=m2*(b2*b2+a1*b2*Math.cos(q2)),D=m2*b2*b2;
+ const T=.5*A*v1*v1+B*v1*v2+.5*D*v2*v2;
+ const V=-(m1*b1+m2*a1)*g*Math.cos(q1)-m2*g*b2*Math.cos(q1+q2)+.5*K1*q1*q1+.5*K2*q2*q2;
+ return [T,V,T+V];
+}
+function resize(c){const r=c.getBoundingClientRect(),dpr=window.devicePixelRatio||1;c.width=Math.max(1,r.width*dpr);c.height=Math.max(1,r.height*dpr);const x=c.getContext('2d');x.setTransform(dpr,0,0,dpr,0,0);return [r.width,r.height,x]}
+function draw(){
+ const [W,H]=[scene.clientWidth,scene.clientHeight];if(!W||!H)return;
+ const dpr=window.devicePixelRatio||1;if(scene.width!==Math.round(W*dpr)||scene.height!==Math.round(H*dpr))resize(scene);
+ ctx.clearRect(0,0,W,H);
+ const scale=Math.min(W*.34,H*.38)/(p.a1+p.b2+.25),ox=W/2,oy=H*.19;
+ const [q1,q2]=state,x1=ox+p.a1*scale*Math.sin(q1),y1=oy+p.a1*scale*Math.cos(q1),x2=x1+p.b2*scale*Math.sin(q1+q2),y2=y1+p.b2*scale*Math.cos(q1+q2);
+ if($('trails').checked){trail1.push([x1,y1]);trail2.push([x2,y2]);if(trail1.length>180){trail1.shift();trail2.shift();}}
+ function pathTrail(a,color){if(a.length<2)return;ctx.beginPath();ctx.moveTo(...a[0]);a.slice(1).forEach(v=>ctx.lineTo(...v));ctx.strokeStyle=color;ctx.globalAlpha=.35;ctx.lineWidth=2;ctx.stroke();ctx.globalAlpha=1;}
+ pathTrail(trail1,'#65d6c4');pathTrail(trail2,'#f6b85b');
+ // gravity arrow
+ ctx.strokeStyle='#9fb0c8';ctx.fillStyle='#9fb0c8';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(W-38,30);ctx.lineTo(W-38,75);ctx.stroke();ctx.beginPath();ctx.moveTo(W-44,67);ctx.lineTo(W-38,77);ctx.lineTo(W-32,67);ctx.stroke();ctx.font='12px system-ui';ctx.fillText('g',W-29,55);
+ // links
+ ctx.lineCap='round';ctx.lineWidth=9;ctx.strokeStyle='#65d6c4';ctx.beginPath();ctx.moveTo(ox,oy);ctx.lineTo(x1,y1);ctx.stroke();
+ ctx.lineWidth=8;ctx.strokeStyle='#f6b85b';ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();
+ // joints and masses
+ [[ox,oy,7,'#e8eef8'],[x1,y1,11,'#65d6c4'],[x2,y2,12,'#f6b85b']].forEach(([x,y,r,c])=>{ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);ctx.fillStyle=c;ctx.fill();ctx.strokeStyle='#08111f';ctx.lineWidth=2;ctx.stroke();});
+ // angle arcs
+ ctx.strokeStyle='#d9e4f2';ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(ox,oy,36,0,q1);ctx.stroke();
+ ctx.fillStyle='#e8eef8';ctx.font='13px system-ui';ctx.fillText('θ₁',ox+42,oy+20);
+ ctx.beginPath();ctx.arc(x1,y1,29,Math.PI/2,Math.PI/2+q2);ctx.stroke();ctx.fillText('θ₂',x1+33,y1+28);
+ ctx.fillStyle='#9fb0c8';ctx.font='12px system-ui';ctx.fillText('fixed pivot',ox+12,oy-12);ctx.fillText('COM 1',x1+13,y1-8);ctx.fillText('COM 2',x2+13,y2-8);
+ $('v1').textContent=q1.toFixed(3);$('v2').textContent=q2.toFixed(3);$('w1').textContent=state[2].toFixed(3);$('w2').textContent=state[3].toFixed(3);
+}
+function plot(canvas,series,labels){
+ const [W,H,c]=resize(canvas);c.clearRect(0,0,W,H);const pad={l:34,r:10,t:12,b:24},pw=W-pad.l-pad.r,ph=H-pad.t-pad.b;
+ c.strokeStyle='#2b3b54';c.lineWidth=1;for(let i=0;i<=4;i++){let y=pad.t+ph*i/4;c.beginPath();c.moveTo(pad.l,y);c.lineTo(W-pad.r,y);c.stroke();}
+ if(history.length<2)return;
+ const start=history[0].t,end=history[history.length-1].t||1;
+ let vals=history.flatMap(h=>series.map(s=>h[s]));let lo=Math.min(...vals),hi=Math.max(...vals);if(hi-lo<1e-8){hi+=1;lo-=1;}let margin=(hi-lo)*.12;lo-=margin;hi+=margin;
+ c.font='10px system-ui';c.fillStyle='#9fb0c8';c.fillText(hi.toFixed(1),2,16);c.fillText(lo.toFixed(1),2,H-9);
+ const colors=['#65d6c4','#f6b85b','#e8eef8'];
+ series.forEach((key,j)=>{c.beginPath();history.forEach((h,i)=>{let x=pad.l+(h.t-start)/(end-start||1)*pw,y=pad.t+(hi-h[key])/(hi-lo)*ph;i?c.lineTo(x,y):c.moveTo(x,y)});c.strokeStyle=colors[j];c.lineWidth=2;c.stroke();});
+ let lx=pad.l;labels.forEach((l,i)=>{c.fillStyle=colors[i];c.fillRect(lx, H-12,8,3);c.fillStyle='#b8c7da';c.fillText(l,lx+11,H-8);lx+=Math.max(55,W/labels.length);});
+}
+function updateReadouts(){
+ const [T,V,E]=energy();$('kin').textContent=T.toFixed(3);$('pot').textContent=V.toFixed(3);$('tot').textContent=E.toFixed(3);$('time').textContent=time.toFixed(2);
+ if(frame%3===0){history.push({t:time,T,V,E,q1:state[0],q2:state[1]});if(history.length>700)history.shift();}
+ plot($('energyPlot'),['T','V','E'],['T','V','E']);plot($('anglePlot'),['q1','q2'],['θ₁','θ₂']);
+}
+function animate(ts){if(!running)return;if(!last)last=ts;let elapsed=Math.min((ts-last)/1000,.04);last=ts;let dt=elapsed*(+$('speed').value);let n=Math.max(1,Math.ceil(dt/.004));for(let i=0;i<n;i++)rk4(dt/n);frame++;draw();updateReadouts();requestAnimationFrame(animate);}
+function play(){running=!running;$('play').textContent=running?'❚❚ Pause':'▶ Play';last=0;if(running)requestAnimationFrame(animate);}
+$('play').onclick=play;
+$('step').onclick=()=>{if(running)play();for(let i=0;i<25;i++)rk4(.004);frame++;draw();updateReadouts();};
+function reset(){running=false;$('play').textContent='▶ Play';state=[p.t1,p.t2,p.w1,p.w2];time=0;history=[];trail1=[];trail2=[];last=0;draw();updateReadouts();}
+$('reset').onclick=reset;
+$('defaults').onclick=()=>{p={...defaults};specs.forEach(([k])=>{$(k).value=p[k];$('out_'+k).textContent=p[k].toFixed(2)});reset();};
+$('zeroTorque').onclick=()=>{p.C1=0;p.C2=0;['C1','C2'].forEach(k=>{$(k).value=0;$('out_'+k).textContent='0.00'});};
+$('trails').onchange=()=>{trail1=[];trail2=[];draw();};
+window.addEventListener('resize',()=>{resize(scene);draw();plot($('energyPlot'),['T','V','E'],['T','V','E']);plot($('anglePlot'),['q1','q2'],['θ₁','θ₂']);});
+resize(scene);resize($('energyPlot'));resize($('anglePlot'));draw();updateReadouts();
+})();
+</script>
+</body></html>
